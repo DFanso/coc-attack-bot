@@ -1,0 +1,14 @@
+# COC Attack Bot - Required Python Packages
+
+# Core automation libraries
+pyautogui>=0.9.54
+keyboard>=0.13.0
+pywin32>=306
+
+# Image processing
+opencv-python>=4.8.0
+Pillow>=9.5.0
+numpy>=1.24.0
+
+# Additional utilities
+requests>=2.31.0 
