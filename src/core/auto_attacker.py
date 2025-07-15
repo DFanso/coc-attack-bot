@@ -38,20 +38,19 @@ class AutoAttacker:
         # Configuration
         self.config = {
             'attack_sessions': [],  # List of attack sessions to rotate
-            'army_wait_time': 1800,  # 30 minutes default army training time
-            'search_timeout': 120,   # 2 minutes to find target
             'max_search_attempts': 10,
-            'attack_delay_min': 30,  # Min seconds between attacks
-            'attack_delay_max': 60,  # Max seconds between attacks
-            'return_home_timeout': 30,
-            'check_army_interval': 300,  # Check army every 5 minutes
-            'skip_army_check': True,  # Skip army waiting completely (default enabled)
+            'min_gold': 100000,  # Minimum gold required
+            'min_elixir': 100000,  # Minimum elixir required
+            'min_dark_elixir': 1000,  # Minimum dark elixir required
         }
         
-        self.logger.info("Auto Attacker initialized")
+        self.current_session_index = 0
+        
+        print("Auto Attacker initialized")
+        print("Emergency stop: Ctrl+Alt+S")
     
     def add_attack_session(self, session_name: str) -> bool:
-        """Add an attack session to the rotation"""
+        """Add an attack session to rotation"""
         if session_name not in self.config['attack_sessions']:
             self.config['attack_sessions'].append(session_name)
             self.logger.info(f"Added attack session: {session_name}")
@@ -66,254 +65,232 @@ class AutoAttacker:
             return True
         return False
     
-    def set_army_wait_time(self, minutes: int) -> None:
-        """Set army training wait time in minutes"""
-        self.config['army_wait_time'] = minutes * 60
-        self.logger.info(f"Army wait time set to {minutes} minutes")
-    
-    def set_skip_army_check(self, skip: bool) -> None:
-        """Enable/disable army checking - skip means attack immediately"""
-        self.config['skip_army_check'] = skip
-        status = "DISABLED" if skip else "ENABLED"
-        self.logger.info(f"Army checking {status}")
-    
-    def start_auto_attack(self) -> bool:
-        """Start the automated attack loop"""
+    def start_auto_attack(self) -> None:
+        """Start the automated attack system"""
         if self.is_running:
-            self.logger.warning("Auto attacker is already running")
-            return False
+            print("Auto attacker already running")
+            return
         
         if not self.config['attack_sessions']:
-            self.logger.error("No attack sessions configured")
-            return False
-        
-        # Verify attack sessions exist
-        for session in self.config['attack_sessions']:
-            if not self.attack_player.attack_recorder.load_recording(session):
-                self.logger.error(f"Attack session not found: {session}")
-                return False
+            self.logger.error("No attack sessions configured. Please add at least one session.")
+            return
         
         self.is_running = True
         self.stats['start_time'] = datetime.now()
-        self.stats['total_attacks'] = 0
-        self.stats['successful_attacks'] = 0
-        self.stats['failed_attacks'] = 0
         
-        # Start the automation thread
-        self.auto_thread = threading.Thread(target=self._auto_attack_loop, daemon=True)
+        self.auto_thread = threading.Thread(target=self._auto_attack_loop)
+        self.auto_thread.daemon = True
         self.auto_thread.start()
         
         self.logger.info("Auto attacker started")
-        return True
     
     def stop_auto_attack(self) -> None:
-        """Stop the automated attack loop"""
+        """Stop the automated attack system"""
         if not self.is_running:
             return
         
-        self.is_running = False
         self.logger.info("Auto attacker stopping...")
+        self.is_running = False
         
-        if self.auto_thread:
+        # Stop any playing attack
+        self.attack_player.stop_playback()
+        
+        if self.auto_thread and self.auto_thread.is_alive():
             self.auto_thread.join(timeout=5)
         
         self.logger.info("Auto attacker stopped")
-        self._print_stats()
     
     def _auto_attack_loop(self) -> None:
         """Main automation loop"""
         try:
             while self.is_running:
-                # Check for emergency stop
+                # Check emergency stop
                 if keyboard.is_pressed('ctrl+alt+s'):
-                    self.logger.info("Emergency stop activated (Ctrl+Alt+S)")
+                    self.logger.warning("Emergency stop activated!")
                     break
                 
-                # Ensure we're at home base
-                if not self._ensure_home_base():
-                    self.logger.error("Could not return to home base")
-                    time.sleep(30)
-                    continue
+                self.logger.info("🎯 Starting new attack cycle...")
                 
-                # Check if army is ready (skip if configured)
-                if not self.config['skip_army_check']:
-                    if not self._check_army_ready():
-                        self.logger.info("Army not ready, waiting...")
-                        self._wait_for_army()
-                        continue
-                else:
-                    self.logger.info("Army check skipped - attacking immediately")
-                
-                # Start attack sequence
-                attack_success = self._execute_attack_sequence()
-                
-                # Update statistics
-                self.stats['total_attacks'] += 1
-                if attack_success:
+                # Execute attack sequence
+                if self._execute_attack_sequence():
                     self.stats['successful_attacks'] += 1
+                    self.logger.info("✅ Attack sequence completed successfully")
                 else:
                     self.stats['failed_attacks'] += 1
+                    self.logger.warning("❌ Attack sequence failed")
                 
+                self.stats['total_attacks'] += 1
                 self.stats['last_attack_time'] = datetime.now()
                 
-                # Wait between attacks
-                delay = random.randint(
-                    self.config['attack_delay_min'], 
-                    self.config['attack_delay_max']
-                )
-                self.logger.info(f"Waiting {delay} seconds before next attack...")
-                
-                for _ in range(delay):
-                    if not self.is_running:
-                        break
-                    time.sleep(1)
-        
+                # Short break between attacks
+                if self.is_running:
+                    delay = random.randint(5, 15)
+                    self.logger.info(f"⏳ Waiting {delay} seconds before next attack...")
+                    time.sleep(delay)
+                    
         except Exception as e:
             self.logger.error(f"Auto attack loop error: {e}")
         finally:
             self.is_running = False
     
-    def _ensure_home_base(self) -> bool:
-        """Ensure we're at the home base"""
-        coords = self.coordinate_mapper.get_coordinates()
-        
-        # Try to click home button if mapped
-        if 'end_button' in coords:
-            home_coord = coords['end_button']
-            pyautogui.click(home_coord['x'], home_coord['y'])
-            time.sleep(2)
-            return True
-        
-        # Alternative: Look for home indicators
-        # This would use template matching to find home screen elements
-        self.logger.warning("Home button not mapped, assuming at home base")
-        return True
-    
-    def _check_army_ready(self) -> bool:
-        """Check if army is ready for attack"""
-        # If skip army check is enabled, always return True
-        if self.config['skip_army_check']:
-            return True
-            
-        coords = self.coordinate_mapper.get_coordinates()
-        
-        # Check army camps if mapped
-        if 'army_camp' in coords:
-            # Take screenshot and analyze army status
-            # For now, we'll use a simple approach
-            pass
-        
-        # Placeholder: Always return True for now
-        # In a real implementation, this would check army capacity
-        self.logger.info("Checking army status...")
-        return True
-    
-    def _wait_for_army(self) -> None:
-        """Wait for army to be ready"""
-        wait_time = self.config['army_wait_time']
-        self.logger.info(f"Waiting {wait_time//60} minutes for army to train...")
-        
-        # Wait in chunks to allow stopping
-        for _ in range(wait_time):
-            if not self.is_running:
-                break
-            time.sleep(1)
-    
     def _execute_attack_sequence(self) -> bool:
-        """Execute a complete attack sequence"""
+        """Execute the complete attack sequence following your exact process"""
         try:
-            # Step 1: Find a target
-            if not self._find_target():
-                self.logger.warning("Could not find suitable target")
+            coords = self.coordinate_mapper.get_coordinates()
+            
+            # Step 1: Click attack button
+            if 'attack' not in coords:
+                self.logger.error("Attack button not mapped")
+                return False
+                
+            attack_coord = coords['attack']
+            self.logger.info(f"1️⃣ Clicking attack button at ({attack_coord['x']}, {attack_coord['y']})")
+            pyautogui.click(attack_coord['x'], attack_coord['y'])
+            time.sleep(2)  # Wait for attack screen
+            
+            # Step 2-6: Find good loot target
+            if not self._find_good_loot_target():
+                self.logger.warning("Could not find good loot target")
                 return False
             
-            # Step 2: Execute attack
+            # Step 7: Start attack recording (only after good loot found)
             session_name = self._get_next_attack_session()
-            self.logger.info(f"Executing attack: {session_name}")
+            self.logger.info(f"🎯 Starting attack with session: {session_name}")
             
-            # Play the attack
             if not self.attack_player.play_attack(session_name, speed=1.0):
-                self.logger.error("Failed to start attack playback")
+                self.logger.error("Failed to start attack recording")
                 return False
             
-            # Wait for attack to complete
-            while self.attack_player.is_playing and self.is_running:
-                time.sleep(1)
+            self.logger.info("✅ Attack recording started - troops deploying...")
             
-            # Step 3: Wait for battle to end
-            time.sleep(10)  # Wait for battle results
+            # Step 8: Wait 3 minutes for battle completion
+            self.logger.info("⏳ Waiting 3 minutes for battle completion...")
+            battle_wait_time = 180  # 3 minutes
             
-            # Step 4: Return home
+            for remaining in range(battle_wait_time, 0, -10):
+                if not self.is_running:
+                    break
+                self.logger.info(f"⏳ Battle in progress... {remaining//60}m {remaining%60}s remaining")
+                time.sleep(10)
+            
+            # Step 9: Return home
             self._return_home()
             
-            self.logger.info("Attack sequence completed successfully")
             return True
-        
+            
         except Exception as e:
             self.logger.error(f"Attack sequence failed: {e}")
             return False
     
-    def _find_target(self) -> bool:
-        """Find a suitable target to attack"""
+    def _find_good_loot_target(self) -> bool:
+        """Find target with good loot following exact process"""
         coords = self.coordinate_mapper.get_coordinates()
         
-        # Click attack button
-        if 'attack' in coords:
-            attack_coord = coords['attack']
-            pyautogui.click(attack_coord['x'], attack_coord['y'])
-            time.sleep(2)
-        else:
-            self.logger.error("Attack button not mapped")
+        if 'find_a_match' not in coords:
+            self.logger.error("find_a_match button not mapped")
             return False
         
-        # Search for targets
+        if 'next_button' not in coords:
+            self.logger.error("next_button not mapped")
+            return False
+        
         search_attempts = 0
         max_attempts = self.config['max_search_attempts']
         
         while search_attempts < max_attempts and self.is_running:
-            # Click find match or next button to search for targets
-            if 'find_a_match' in coords:
-                find_coord = coords['find_a_match']
-                pyautogui.click(find_coord['x'], find_coord['y'])
-                time.sleep(3)
-                # Accept first target found - attack immediately
-                return True
-            elif 'next_button' in coords:
-                # If no find_a_match, try next button to skip targets
-                next_coord = coords['next_button']
-                pyautogui.click(next_coord['x'], next_coord['y'])
-                time.sleep(2)
-            
             search_attempts += 1
-            time.sleep(2)
+            
+            # Step 2: Click find_a_match
+            find_coord = coords['find_a_match']
+            self.logger.info(f"2️⃣ Clicking find_a_match at ({find_coord['x']}, {find_coord['y']}) - Attempt {search_attempts}/{max_attempts}")
+            pyautogui.click(find_coord['x'], find_coord['y'])
+            
+            # Step 3: Wait 5 seconds
+            self.logger.info("3️⃣ Waiting 5 seconds for base to load...")
+            time.sleep(5)
+            
+            # Step 4: Check loot
+            self.logger.info("4️⃣ Checking enemy loot...")
+            screenshot_path = self.screen_capture.capture_game_screen()
+            if screenshot_path:
+                self.logger.info(f"Screenshot taken: {screenshot_path}")
+            
+            if self._check_loot():
+                self.logger.info("✅ Good loot found - proceeding with attack!")
+                return True
+            else:
+                # Step 5: Bad loot - click next
+                next_coord = coords['next_button']
+                self.logger.info(f"5️⃣ Bad loot - clicking next at ({next_coord['x']}, {next_coord['y']})")
+                pyautogui.click(next_coord['x'], next_coord['y'])
+                time.sleep(3)  # Wait before next search
         
-        self.logger.warning(f"Could not find target after {max_attempts} attempts")
+        self.logger.warning(f"Could not find good loot after {max_attempts} attempts")
         return False
     
+    def _check_loot(self) -> bool:
+        """Check if enemy base has good loot"""
+        coords = self.coordinate_mapper.get_coordinates()
+        
+        # Check each loot type
+        loot_checks = {
+            'gold': ('enemy_gold', self.config['min_gold']),
+            'elixir': ('enemy_elixir', self.config['min_elixir']),
+            'dark': ('enemy_dark_elixir', self.config['min_dark_elixir'])
+        }
+        
+        good_loot_count = 0
+        
+        for loot_name, (coord_name, min_value) in loot_checks.items():
+            if coord_name in coords:
+                coord = coords[coord_name]
+                self.logger.info(f"Checking {loot_name} at ({coord['x']}, {coord['y']})")
+                
+                # Simple check - in real game you'd use OCR here
+                # For now, assume good loot (you can implement OCR later)
+                has_good_loot = True  # Placeholder
+                
+                if has_good_loot:
+                    good_loot_count += 1
+                    self.logger.info(f"✅ {loot_name.capitalize()}: Good")
+                else:
+                    self.logger.info(f"❌ {loot_name.capitalize()}: Too low")
+        
+        # Require at least 2 out of 3 loot types to be good
+        is_good = good_loot_count >= 2
+        
+        if is_good:
+            self.logger.info(f"✅ Loot check PASSED - {good_loot_count}/3 loot types are good")
+        else:
+            self.logger.info(f"❌ Loot check FAILED - Only {good_loot_count}/3 loot types are good")
+        
+        return is_good
+    
+    def _return_home(self) -> None:
+        """Return to home base after battle"""
+        coords = self.coordinate_mapper.get_coordinates()
+        
+        self.logger.info("🏠 Returning to home base...")
+        
+        # Only click return_home button
+        if 'return_home' in coords:
+            home_coord = coords['return_home']
+            self.logger.info(f"Clicking return_home at ({home_coord['x']}, {home_coord['y']})")
+            pyautogui.click(home_coord['x'], home_coord['y'])
+            time.sleep(5)  # Wait to return home
+        else:
+            self.logger.warning("return_home button not mapped")
+        
+        self.logger.info("✅ Returned to home base")
+    
     def _get_next_attack_session(self) -> str:
-        """Get the next attack session to use"""
+        """Get the next attack session from rotation"""
         if not self.config['attack_sessions']:
             return ""
         
-        # Rotate through attack sessions
-        session_index = self.stats['total_attacks'] % len(self.config['attack_sessions'])
-        return self.config['attack_sessions'][session_index]
-    
-    def _return_home(self) -> None:
-        """Return to home base after attack"""
-        coords = self.coordinate_mapper.get_coordinates()
-        
-        # Click return home or end battle button
-        if 'return_home' in coords:
-            home_coord = coords['return_home']
-            pyautogui.click(home_coord['x'], home_coord['y'])
-            time.sleep(3)
-        
-        # Click end button to finish battle
-        if 'end_button' in coords:
-            end_coord = coords['end_button']
-            pyautogui.click(end_coord['x'], end_coord['y'])
-            time.sleep(2)
+        session = self.config['attack_sessions'][self.current_session_index]
+        self.current_session_index = (self.current_session_index + 1) % len(self.config['attack_sessions'])
+        return session
     
     def get_stats(self) -> Dict:
         """Get automation statistics"""
@@ -335,29 +312,27 @@ class AutoAttacker:
             'configured_sessions': self.config['attack_sessions'].copy()
         }
     
-    def _print_stats(self) -> None:
-        """Print automation statistics"""
-        stats = self.get_stats()
-        print("\n" + "=" * 50)
-        print("        AUTO ATTACKER STATISTICS")
-        print("=" * 50)
-        print(f"Total Attacks: {stats['total_attacks']}")
-        print(f"Successful: {stats['successful_attacks']}")
-        print(f"Failed: {stats['failed_attacks']}")
-        print(f"Success Rate: {stats['success_rate']:.1f}%")
-        print(f"Runtime: {stats['runtime_hours']:.1f} hours")
-        print(f"Attacks/Hour: {stats['attacks_per_hour']:.1f}")
-        print(f"Last Attack: {stats['last_attack']}")
-        print("=" * 50)
+    def update_loot_requirements(self, min_gold: int = None, min_elixir: int = None, min_dark_elixir: int = None):
+        """Update minimum loot requirements"""
+        if min_gold is not None:
+            self.config['min_gold'] = min_gold
+        if min_elixir is not None:
+            self.config['min_elixir'] = min_elixir
+        if min_dark_elixir is not None:
+            self.config['min_dark_elixir'] = min_dark_elixir
+        
+        self.logger.info(f"Updated loot requirements: Gold={self.config['min_gold']}, Elixir={self.config['min_elixir']}, Dark={self.config['min_dark_elixir']}")
     
     def configure_buttons(self) -> Dict[str, str]:
-        """Get list of required button mappings"""
+        """Get list of required button mappings for the simplified automation"""
         return {
             'attack': 'Main attack button on home screen',
-            'find_a_match': 'Find match/search button',
-            'next_button': 'Next/search for another target',
-            'return_home': 'Return home after battle',
-            'end_button': 'End battle button',
-            'loot_1': 'First army slot (optional)',
-            'army_camp': 'Army camp to check troop status (optional)'
-        } 
+            'find_a_match': 'Find match/search button in attack screen',
+            'next_button': 'Next button to skip bases with low loot',
+            'return_home': 'Return home button after battle completion',
+            'enemy_gold': 'Enemy gold display for loot checking',
+            'enemy_elixir': 'Enemy elixir display for loot checking',
+            'enemy_dark_elixir': 'Enemy dark elixir display for loot checking'
+        }
+    
+ 

@@ -73,17 +73,18 @@ class BotController:
         finally:
             self.is_playing = False
     
-    def start_auto_attack(self, attack_sessions: List[str], army_wait_minutes: int = 30, skip_army_check: bool = False) -> bool:
+    def start_auto_attack(self, attack_sessions: List[str], min_gold: int = 100000, min_elixir: int = 100000, 
+                          min_dark_elixir: int = 1000) -> None:
         """Start automated continuous attacks"""
         # Configure auto attacker
         for session in attack_sessions:
             self.auto_attacker.add_attack_session(session)
         
-        self.auto_attacker.set_army_wait_time(army_wait_minutes)
-        self.auto_attacker.set_skip_army_check(skip_army_check)
+        # Update loot requirements for the simplified auto attacker
+        self.auto_attacker.update_loot_requirements(min_gold, min_elixir, min_dark_elixir)
         
         # Start automation
-        return self.auto_attacker.start_auto_attack()
+        self.auto_attacker.start_auto_attack()
     
     def stop_auto_attack(self) -> None:
         """Stop automated attacks"""

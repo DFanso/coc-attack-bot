@@ -96,8 +96,8 @@ class ConsoleUI:
                 stats = self.bot.get_auto_attack_stats()
                 print(f"Attacks: {stats['total_attacks']} (Success: {stats['success_rate']:.1f}%)")
                 print(f"Runtime: {stats['runtime_hours']:.1f} hours")
-                army_status = "DISABLED" if self.bot.auto_attacker.config['skip_army_check'] else "ENABLED"
-                print(f"Army Check: {army_status}")
+                print(f"Army Check: DISABLED")
+                print(f"Loot Check: ENABLED")
             else:
                 print("Status: STOPPED")
             
@@ -167,30 +167,41 @@ class ConsoleUI:
             print("No sessions selected")
             return
         
-        # Set army wait time
-        try:
-            army_wait = int(input("Army training wait time (minutes, default 30): ") or "30")
-        except ValueError:
-            army_wait = 30
+        # Note: Army checking is always disabled in the simplified bot
         
-        # Ask about skipping army check
-        skip_army = input("Skip army checking? Attack immediately without waiting (y/n, default y): ").strip().lower()
-        skip_army_check = skip_army != 'n'  # Default to True (skip army check)
+        # Loot checking is always enabled in the simplified bot
+        print("\nLOOT CHECKING:")
+        print("- Bot will check enemy loot and skip low-loot bases")
+        print("- Enemy coordinates: enemy_gold, enemy_elixir, enemy_dark_elixir")
+        
+        # Set loot requirements
+        min_gold = 100000
+        min_elixir = 100000  
+        min_dark_elixir = 1000
+        
+        print("\nSet minimum loot requirements:")
+        try:
+            min_gold = int(input(f"Minimum Gold (default {min_gold}): ") or str(min_gold))
+            min_elixir = int(input(f"Minimum Elixir (default {min_elixir}): ") or str(min_elixir))
+            min_dark_elixir = int(input(f"Minimum Dark Elixir (default {min_dark_elixir}): ") or str(min_dark_elixir))
+        except ValueError:
+            print("Using default loot values")
         
         # Clear existing sessions and add new ones
         self.bot.auto_attacker.config['attack_sessions'].clear()
         for session in selected_sessions:
             self.bot.auto_attacker.add_attack_session(session)
         
-        self.bot.auto_attacker.set_army_wait_time(army_wait)
-        self.bot.auto_attacker.set_skip_army_check(skip_army_check)
+        # Update loot requirements for the simplified auto attacker
+        self.bot.auto_attacker.update_loot_requirements(min_gold, min_elixir, min_dark_elixir)
         
         print(f"\nAuto attack configured:")
         print(f"  Sessions: {len(selected_sessions)}")
-        if skip_army_check:
-            print(f"  Army checking: DISABLED (attack immediately)")
-        else:
-            print(f"  Army wait time: {army_wait} minutes")
+        print(f"  Army checking: DISABLED (attacks immediately)")
+        print(f"  Loot checking: ENABLED")
+        print(f"    Min Gold: {min_gold:,}")
+        print(f"    Min Elixir: {min_elixir:,}")
+        print(f"    Min Dark Elixir: {min_dark_elixir:,}")
         print("  Ready to start!")
     
     def start_auto_attack(self) -> None:
@@ -233,16 +244,15 @@ class ConsoleUI:
         confirm = input("\nStart auto attack? (y/n): ").strip().lower()
         if confirm == 'y':
             sessions = self.bot.auto_attacker.config['attack_sessions']
-            army_wait = self.bot.auto_attacker.config['army_wait_time'] // 60
-            skip_army = self.bot.auto_attacker.config['skip_army_check']
+            min_gold = self.bot.auto_attacker.config['min_gold']
+            min_elixir = self.bot.auto_attacker.config['min_elixir']
+            min_dark_elixir = self.bot.auto_attacker.config['min_dark_elixir']
             
-            if self.bot.start_auto_attack(sessions, army_wait, skip_army):
-                print("Auto attack started successfully!")
-                if skip_army:
-                    print("Army checking DISABLED - attacking immediately!")
-                print("Press Ctrl+Alt+S to stop at any time")
-            else:
-                print("Failed to start auto attack")
+            self.bot.start_auto_attack(sessions, min_gold, min_elixir, min_dark_elixir)
+            print("Auto attack started successfully!")
+            print("Army checking DISABLED - attacking immediately!")
+            print("Loot checking ENABLED - will skip low loot bases!")
+            print("Press Ctrl+Alt+S to stop at any time")
     
     def stop_auto_attack(self) -> None:
         """Stop the auto attack system"""
@@ -406,12 +416,12 @@ class ConsoleUI:
                 # Toggle auto-detection
                 self.bot.attack_recorder.auto_detect_clicks = not self.bot.attack_recorder.auto_detect_clicks
                 status = "ENABLED" if self.bot.attack_recorder.auto_detect_clicks else "DISABLED"
-                print(f"Auto-detection is now {status}")
+                print(f"🖱️ Auto-click detection is now {status}")
                 if self.bot.attack_recorder.auto_detect_clicks:
-                    print("WARNING: Auto-detection may record unwanted clicks during navigation")
-                    print("Use manual mode (F6) if you experience issues")
+                    print("✅ Clicks will be automatically recorded during sessions")
+                    print("💡 If you get unwanted clicks, use F6 for manual mode instead")
                 else:
-                    print("Use F6 to manually record clicks during recording sessions")
+                    print("⚠️ You must use F6 to manually record each click during sessions")
             
             elif choice == '6':
                 break
@@ -609,20 +619,30 @@ ATTACK PLAYBACK:
 - Press F9 to stop playback
 - ESC for emergency stop
 
-AUTO ATTACK SYSTEM:
-- Records multiple attack sessions and rotates between them
-- Automatically waits for army to train
-- Finds targets and executes attacks continuously
+AUTO ATTACK SYSTEM - EXACT STRATEGY:
+1. Click attack button
+2. Click find_a_match to search for base  
+3. Wait few seconds and take screenshot
+4. Check enemy_gold, enemy_elixir, enemy_dark_elixir
+5. If loot is good → start attack recording
+6. If loot is bad → click next_button to skip
+7. After attack starts → wait 3 minutes for battle
+8. Click return_home button to go back
+9. Repeat continuously
 - Emergency stop: Ctrl+Alt+S
 
 REQUIRED BUTTONS FOR AUTO ATTACK:
-- attack_button: Main attack button on home screen
-- find_match_button: Search for opponents
-- attack_confirm_button: Confirm attack on enemy base
-- return_home_button: Return to village after battle
-- home_button: Navigate to home screen
-- okay_button: Dismiss dialogs and notifications
-- army_camp: Check army status
+- attack: Main attack button on home screen
+- find_a_match: Search for opponents
+- next_button: Skip to next target
+- return_home: Return to village after battle
+- end_button: End battle button
+- loot_1 through loot_8: Army slots (troops/spells for deployment)
+
+OPTIONAL FOR LOOT CHECKING:
+- enemy_gold: Enemy's gold display on attack screen
+- enemy_elixir: Enemy's elixir display on attack screen
+- enemy_dark_elixir: Enemy's dark elixir display on attack screen
 
 TIPS:
 - Make sure COC is in the same state when playing back

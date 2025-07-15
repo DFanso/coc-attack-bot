@@ -14,7 +14,7 @@ from datetime import datetime
 class AttackRecorder:
     """Records attack sessions including mouse movements, clicks, and timing"""
     
-    def __init__(self, auto_detect_clicks: bool = False):
+    def __init__(self, auto_detect_clicks: bool = True):
         self.recordings_dir = "recordings"
         self.current_recording = []
         self.recording_thread = None
@@ -22,6 +22,7 @@ class AttackRecorder:
         self.start_time = None
         self.session_name = None
         self.auto_detect_clicks = auto_detect_clicks
+        self._last_click_time = 0
         
         # Create recordings directory
         os.makedirs(self.recordings_dir, exist_ok=True)
@@ -29,13 +30,13 @@ class AttackRecorder:
         print("Attack Recorder initialized")
         print("Recording Controls:")
         print("  F5 - Start/Stop recording")
-        print("  F6 - Record click at current position (MANUAL MODE)")
+        print("  F6 - Manual click recording (backup method)")
         print("  F7 - Add delay marker")
         print("  ESC - Cancel recording")
         if self.auto_detect_clicks:
-            print("NOTE: Auto-click detection is ENABLED")
+            print("✅ Auto-click detection is ENABLED - clicks will be recorded automatically")
         else:
-            print("NOTE: Auto-click detection is DISABLED (use F6 for manual recording)")
+            print("⚠️ Auto-click detection is DISABLED (use F6 for manual recording)")
     
     def start_recording(self, session_name: str) -> None:
         """Start recording an attack session"""
@@ -111,12 +112,12 @@ class AttackRecorder:
                     break
                 
                 if keyboard.is_pressed('f6'):
-                    # Manual click recording
+                    # Manual click recording (backup method)
                     x, y = pyautogui.position()
                     self._add_action('click', x, y, current_time)
-                    print(f"Recorded click at ({x}, {y})")
+                    print(f"🖱️ Manual click recorded at ({x}, {y})")
                     
-                    # Wait for key release
+                    # Wait for key release to prevent spam
                     while keyboard.is_pressed('f6'):
                         time.sleep(0.1)
                 
@@ -130,22 +131,37 @@ class AttackRecorder:
                     while keyboard.is_pressed('f7'):
                         time.sleep(0.1)
                 
-                # Optional auto-detection (disabled by default)
+                # Auto-click detection (enabled by default)
                 if self.auto_detect_clicks:
                     try:
-                        # Use win32 API for more reliable mouse detection
+                        # Method 1: Try win32 API for reliable mouse detection
                         import win32api
                         left_button_state = win32api.GetKeyState(0x01)  # VK_LBUTTON
-                        if left_button_state < 0:  # Button is pressed
+                        right_button_state = win32api.GetKeyState(0x02)  # VK_RBUTTON
+                        
+                        if left_button_state < 0 or right_button_state < 0:  # Button is pressed
                             x, y = pyautogui.position()
                             # Check if this is a new click (avoid duplicates)
-                            if not hasattr(self, '_last_click_time') or (current_time - self._last_click_time) > 0.1:
+                            if (current_time - self._last_click_time) > 0.15:  # 150ms debounce
                                 self._add_action('click', x, y, current_time)
-                                print(f"Auto-recorded click at ({x}, {y})")
+                                print(f"🖱️ Auto-recorded click at ({x}, {y})")
                                 self._last_click_time = current_time
-                    except:
-                        # If auto-detection fails, just continue
-                        pass
+                                
+                    except Exception as e:
+                        # Method 2: Fallback using pyautogui mouse detection
+                        try:
+                            # Check if mouse button is pressed using alternative method
+                            if hasattr(pyautogui, '_mouseDown') and pyautogui._mouseDown:
+                                x, y = pyautogui.position()
+                                if (current_time - self._last_click_time) > 0.15:
+                                    self._add_action('click', x, y, current_time)
+                                    print(f"🖱️ Auto-recorded click at ({x}, {y}) [fallback]")
+                                    self._last_click_time = current_time
+                        except:
+                            # If all auto-detection fails, inform user about manual mode
+                            if not hasattr(self, '_fallback_warned'):
+                                print("⚠️ Auto-click detection failed - use F6 to manually record clicks")
+                                self._fallback_warned = True
                 
                 # Track significant mouse movements
                 current_mouse_pos = pyautogui.position()
@@ -158,6 +174,13 @@ class AttackRecorder:
         except Exception as e:
             print(f"Recording error: {e}")
             self.is_recording = False
+    
+    def toggle_auto_click_detection(self) -> bool:
+        """Toggle auto-click detection on/off"""
+        self.auto_detect_clicks = not self.auto_detect_clicks
+        status = "ENABLED" if self.auto_detect_clicks else "DISABLED"
+        print(f"Auto-click detection: {status}")
+        return self.auto_detect_clicks
     
     def _add_action(self, action_type: str, x: int, y: int, timestamp: float, extra_data: Optional[Dict] = None) -> None:
         """Add an action to the current recording"""
