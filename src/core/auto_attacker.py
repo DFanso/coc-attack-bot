@@ -258,6 +258,30 @@ class AutoAttacker:
             self.logger.error(f"AI analysis failed: {analysis['reasoning']}")
             return False
 
+        # Log detailed loot comparison for debugging
+        loot = analysis.get("loot", {})
+        extracted_gold = loot.get("gold", 0)
+        extracted_elixir = loot.get("elixir", 0)
+        extracted_dark = loot.get("dark_elixir", 0)
+        townhall_level = analysis.get("townhall_level", 0)
+        
+        self.logger.info(f"🔍 AI Extracted Loot: Gold={extracted_gold:,}, Elixir={extracted_elixir:,}, Dark={extracted_dark:,}")
+        self.logger.info(f"🏰 Town Hall Level: {townhall_level}")
+        self.logger.info(f"📋 Requirements: Gold={min_gold:,}, Elixir={min_elixir:,}, Dark={min_dark:,}, Max TH=12")
+        
+        # Check loot requirements
+        gold_ok = extracted_gold >= min_gold
+        elixir_ok = extracted_elixir >= min_elixir
+        dark_ok = extracted_dark >= min_dark
+        th_ok = townhall_level <= 12
+        
+        self.logger.info(f"✅/❌ Meets Requirements: Gold={gold_ok}, Elixir={elixir_ok}, Dark={dark_ok}, TH_Level={th_ok}")
+        
+        # Override AI decision if Town Hall is too high
+        if townhall_level > 12:
+            self.logger.info(f"❌ Overriding AI: Town Hall {townhall_level} is too strong (max allowed: 12)")
+            return False
+
         recommendation = analysis.get("recommendation", "SKIP").upper()
         return recommendation == "ATTACK"
 

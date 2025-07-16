@@ -116,32 +116,53 @@ Respond in this exact JSON format:
         return f"""
 You are an expert Clash of Clans player analyzing enemy bases for attack decisions.
 
+CRITICAL: You must read the EXACT loot numbers displayed in the top-left area of the screen.
+
 Current loot requirements:
 - Minimum Gold: {min_gold:,}
 - Minimum Elixir: {min_elixir:,}  
 - Minimum Dark Elixir: {min_dark:,}
 
-Analyze this Clash of Clans base screenshot and provide:
-1. Loot amounts (Gold, Elixir, Dark Elixir) - estimate the visible amounts from the loot display
-2. Town Hall level (1-12) - identify from the town hall building
-3. Base difficulty assessment (Easy/Medium/Hard) - based on defense layout and strength
-4. Attack recommendation (ATTACK or SKIP) - based on loot vs difficulty
+INSTRUCTIONS:
+1. Look at the "Available Loot:" section in the top-left corner of the screenshot
+2. Read the EXACT numbers next to the gold coin (yellow), elixir drop (pink), and dark elixir drop (black) icons
+3. Identify the Town Hall level by looking at the Town Hall building
+4. Compare loot numbers to minimum requirements above
+5. Make recommendation based on loot AND Town Hall level
 
-Decision criteria:
-- ATTACK if: Loot meets requirements AND difficulty is reasonable
-- SKIP if: Low loot OR extremely difficult base
+LOOT READING RULES:
+- Gold is shown next to a yellow coin icon
+- Elixir is shown next to a pink/purple drop icon  
+- Dark Elixir is shown next to a black drop icon
+- Numbers may have spaces (e.g. "123 456" = 123,456)
+- Be extremely careful reading the digits
+
+TOWN HALL RULES:
+- Town Hall 13, 14, 15, 16+ are TOO STRONG - always SKIP these
+- Only attack Town Hall 12 and below
+- Look at the Town Hall building design to identify the level
+
+DECISION CRITERIA:
+- ATTACK only if: ALL loot types meet requirements AND Town Hall is level 12 or below
+- SKIP if: ANY loot type is below requirements OR Town Hall is level 13+
+- Do NOT consider base difficulty - focus ONLY on loot amounts and Town Hall level
+
+Examples:
+- Gold: 19,015 (need 500,000) → SKIP (loot too low)
+- Town Hall 13 → SKIP (too strong regardless of loot)
+- Town Hall 11 with good loot → ATTACK
 
 Respond in this exact JSON format:
 {{
     "loot": {{
-        "gold": estimated_gold_amount,
-        "elixir": estimated_elixir_amount,
-        "dark_elixir": estimated_dark_elixir_amount
+        "gold": actual_gold_amount_you_read,
+        "elixir": actual_elixir_amount_you_read,
+        "dark_elixir": actual_dark_elixir_amount_you_read
     }},
     "townhall_level": town_hall_level_number,
     "difficulty": "Easy/Medium/Hard",
     "recommendation": "ATTACK/SKIP",
-    "reasoning": "Brief explanation of decision"
+    "reasoning": "Specific reason: Gold X vs required Y, Elixir A vs required B, Dark C vs required D, TH level E"
 }}
 """
     
