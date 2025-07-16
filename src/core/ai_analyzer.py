@@ -150,6 +150,7 @@ DECISION CRITERIA:
 Examples:
 - Gold: 19,015 (need 500,000) → SKIP (loot too low)
 - Town Hall 13 → SKIP (too strong regardless of loot)
+- Town Hall 12 with good loot → ATTACK
 - Town Hall 11 with good loot → ATTACK
 
 Respond in this exact JSON format:

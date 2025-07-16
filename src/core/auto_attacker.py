@@ -244,8 +244,67 @@ class AutoAttacker:
                     return False
         
         self.logger.warning(f"Could not find good loot after {max_attempts} attempts")
-        return False
         
+        # Click end button and retry the entire search process
+        self.logger.info("🔄 No good bases found - clicking end button to restart search...")
+        self._click_end_button_and_retry()
+        
+        # Try one more complete search cycle
+        self.logger.info("🔄 Retrying base search after end button...")
+        return self._search_for_good_base_cycle()
+        
+    def _search_for_good_base_cycle(self) -> bool:
+        """Perform one complete cycle of base searching"""
+        coords = self.coordinate_mapper.get_coordinates()
+        
+        if 'find_a_match' not in coords or 'next_button' not in coords:
+            self.logger.error("Required buttons not mapped for base search")
+            return False
+        
+        search_attempts = 0
+        max_attempts = self.max_search_attempts
+        
+        while search_attempts < max_attempts and self.is_running:
+            search_attempts += 1
+            
+            # Click find_a_match
+            find_coord = coords['find_a_match']
+            self.logger.info(f"2️⃣ Clicking find_a_match at ({find_coord['x']}, {find_coord['y']}) - Attempt {search_attempts}/{max_attempts}")
+            pyautogui.click(find_coord['x'], find_coord['y'])
+            
+            # Wait for base to load
+            self.logger.info("3️⃣ Waiting 5 seconds for base to load...")
+            time.sleep(5)
+            
+            # Check loot
+            screenshot_path = self.screen_capture.capture_game_screen()
+            if not screenshot_path:
+                self.logger.warning("Could not take screenshot, skipping base...")
+                continue
+            
+            use_ai = self.config.get('ai_analyzer.enabled', False)
+            self.logger.info(f"AI Analysis is {'ENABLED' if use_ai else 'DISABLED'}.")
+            
+            decision_to_attack = False
+            if use_ai:
+                self.logger.info("4️⃣ Checking enemy loot with AI...")
+                decision_to_attack = self._check_loot_with_ai(screenshot_path)
+            else:
+                self.logger.info("4️⃣ Performing simple loot check (AI Disabled)...")
+                decision_to_attack = self._check_loot()
+            
+            if decision_to_attack:
+                self.logger.info("✅ Base is good! Proceeding with attack!")
+                return True
+            else:
+                # Bad base, click next
+                self.logger.info("❌ Base not suitable. Clicking next...")
+                next_coord = coords['next_button']
+                pyautogui.click(next_coord['x'], next_coord['y'])
+                time.sleep(3)
+        
+        return False
+    
     def _check_loot_with_ai(self, screenshot_path: str) -> bool:
         """Analyze the base with Gemini and decide whether to attack."""
         min_gold = self.config.get('ai_analyzer.min_gold', 300000)
@@ -322,6 +381,18 @@ class AutoAttacker:
             self.logger.info(f"❌ Loot check FAILED - Only {good_loot_count}/3 loot types are good")
         
         return is_good
+    
+    def _click_end_button_and_retry(self) -> None:
+        """Click end button when Town Hall is not detected and retry"""
+        coords = self.coordinate_mapper.get_coordinates()
+        
+        if 'end_button' in coords:
+            end_coord = coords['end_button']
+            self.logger.info(f"🔄 Clicking end_button at ({end_coord['x']}, {end_coord['y']})")
+            pyautogui.click(end_coord['x'], end_coord['y'])
+            time.sleep(3)  # Wait for end action to complete
+        else:
+            self.logger.warning("end_button not mapped - cannot retry automatically")
     
     def _return_home(self) -> None:
         """Return to home base after battle"""
