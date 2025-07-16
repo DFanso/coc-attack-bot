@@ -52,7 +52,7 @@ class ConsoleUI:
         print("1. Coordinate Mapping")
         print("2. Attack Recording")
         print("3. Attack Playback")
-        print("4. Auto Attack System")  # New menu option
+        print("4. Auto Attack System")
         print("5. Game Detection")
         print("6. Screenshots")
         print("7. Settings")
@@ -69,7 +69,7 @@ class ConsoleUI:
         elif choice == '3':
             self.attack_playback_menu()
         elif choice == '4':
-            self.auto_attack_menu()  # New menu
+            self.auto_attack_menu()
         elif choice == '5':
             self.game_detection_menu()
         elif choice == '6':
@@ -166,94 +166,91 @@ class ConsoleUI:
         if not selected_sessions:
             print("No sessions selected")
             return
+
+        # AI Configuration
+        use_ai = input("\nEnable AI Analysis for this run? (y/n, default y): ").strip().lower()
+        use_ai = use_ai != 'n'
+        self.bot.config.set('ai_analyzer.enabled', use_ai)
         
-        # Note: Army checking is always disabled in the simplified bot
+        if use_ai:
+            api_key = self.bot.config.get('ai_analyzer.google_gemini_api_key')
+            if not api_key:
+                api_key = input("Please enter your Google Gemini API Key: ").strip()
+                if not api_key:
+                    print("❌ API Key cannot be empty. Disabling AI analysis.")
+                    self.bot.config.set('ai_analyzer.enabled', False)
+                else:
+                    self.bot.config.set('ai_analyzer.google_gemini_api_key', api_key)
+                    self.bot.ai_analyzer.api_key = api_key
+            
+            if self.bot.config.get('ai_analyzer.enabled'):
+                print("Testing AI Connection...")
+                if not self.bot.test_ai_connection():
+                    print("❌ AI Connection Failed. Check your API key. Disabling AI for this run.")
+                    self.bot.config.set('ai_analyzer.enabled', False)
+                else:
+                    print("✅ AI Connection Successful.")
         
-        # Loot checking is always enabled in the simplified bot
-        print("\nLOOT CHECKING:")
-        print("- Bot will check enemy loot and skip low-loot bases")
-        print("- Enemy coordinates: enemy_gold, enemy_elixir, enemy_dark_elixir")
-        
-        # Set loot requirements
-        min_gold = 100000
-        min_elixir = 100000  
-        min_dark_elixir = 1000
-        
+        # Loot requirements
         print("\nSet minimum loot requirements:")
         try:
-            min_gold = int(input(f"Minimum Gold (default {min_gold}): ") or str(min_gold))
-            min_elixir = int(input(f"Minimum Elixir (default {min_elixir}): ") or str(min_elixir))
-            min_dark_elixir = int(input(f"Minimum Dark Elixir (default {min_dark_elixir}): ") or str(min_dark_elixir))
+            min_gold = int(input(f"Minimum Gold (default {self.bot.config.get('ai_analyzer.min_gold')}): ") or self.bot.config.get('ai_analyzer.min_gold'))
+            min_elixir = int(input(f"Minimum Elixir (current: {self.bot.config.get('ai_analyzer.min_elixir')}): ") or self.bot.config.get('ai_analyzer.min_elixir'))
+            min_dark_elixir = int(input(f"Minimum Dark Elixir (current: {self.bot.config.get('ai_analyzer.min_dark_elixir')}): ") or self.bot.config.get('ai_analyzer.min_dark_elixir'))
+            self.bot.config.set('ai_analyzer.min_gold', min_gold)
+            self.bot.config.set('ai_analyzer.min_elixir', min_elixir)
+            self.bot.config.set('ai_analyzer.min_dark_elixir', min_dark_elixir)
         except ValueError:
-            print("Using default loot values")
+            print("Invalid input. Using default loot values.")
+
+        # Final Configuration Summary
+        self.bot.config.set('auto_attacker.attack_sessions', selected_sessions)
+        self.bot.auto_attacker.attack_sessions = selected_sessions
+        self.bot.config.save_config()
         
-        # Clear existing sessions and add new ones
-        self.bot.auto_attacker.config['attack_sessions'].clear()
-        for session in selected_sessions:
-            self.bot.auto_attacker.add_attack_session(session)
-        
-        # Update loot requirements for the simplified auto attacker
-        self.bot.auto_attacker.update_loot_requirements(min_gold, min_elixir, min_dark_elixir)
-        
-        print(f"\nAuto attack configured:")
-        print(f"  Sessions: {len(selected_sessions)}")
-        print(f"  Army checking: DISABLED (attacks immediately)")
-        print(f"  Loot checking: ENABLED")
-        print(f"    Min Gold: {min_gold:,}")
-        print(f"    Min Elixir: {min_elixir:,}")
-        print(f"    Min Dark Elixir: {min_dark_elixir:,}")
-        print("  Ready to start!")
-    
+        print("\n" + "=" * 40)
+        print("✅ Auto Attack Configured:")
+        print(f"  Attack Sessions: {', '.join(selected_sessions)}")
+        print(f"  AI Analysis: {'ENABLED' if self.bot.config.get('ai_analyzer.enabled') else 'DISABLED'}")
+        if self.bot.config.get('ai_analyzer.enabled'):
+            print(f"    Min Gold: {self.bot.config.get('ai_analyzer.min_gold'):,}")
+            print(f"    Min Elixir: {self.bot.config.get('ai_analyzer.min_elixir'):,}")
+            print(f"    Min Dark Elixir: {self.bot.config.get('ai_analyzer.min_dark_elixir'):,}")
+        print("=" * 40)
+        print("Ready to start from the Auto Attack menu!")
+
     def start_auto_attack(self) -> None:
         """Start the auto attack system"""
         if self.bot.is_auto_attacking():
             print("Auto attack is already running!")
             return
         
-        if not self.bot.auto_attacker.config['attack_sessions']:
-            print("No attack sessions configured!")
-            print("Please use 'Setup Auto Attack' first.")
+        # Ensure sessions are configured before starting
+        attack_sessions = self.bot.config.get('auto_attacker.attack_sessions', [])
+        if not attack_sessions:
+            print("❌ No attack sessions configured! Please run Setup first.")
             return
         
-        # Check required buttons
-        required_buttons = self.bot.get_required_buttons()
-        mapped_coords = self.bot.get_mapped_coordinates()
-        missing_buttons = []
+        print("\n" + "=" * 40)
+        print("         🚀 STARTING AUTO ATTACK 🚀")
+        print("=" * 40)
+        print("Configuration for this run:")
+        print(f"  Attack Sessions: {', '.join(attack_sessions)}")
+        print(f"  AI Analysis: {'ENABLED' if self.bot.config.get('ai_analyzer.enabled') else 'DISABLED'}")
+        print(f"  Min Gold: {self.bot.config.get('ai_analyzer.min_gold'):,}")
+        print(f"  Min Elixir: {self.bot.config.get('ai_analyzer.min_elixir'):,}")
+        print(f"  Min Dark Elixir: {self.bot.config.get('ai_analyzer.min_dark_elixir'):,}")
+        print("-" * 40)
         
-        for button_name in required_buttons.keys():
-            if button_name not in mapped_coords:
-                missing_buttons.append(button_name)
-        
-        if missing_buttons:
-            print("WARNING: Some required buttons are not mapped:")
-            for button in missing_buttons:
-                print(f"  - {button}: {required_buttons[button]}")
-            
-            confirm = input("\nContinue anyway? (y/n): ").strip().lower()
-            if confirm != 'y':
-                print("Please map the required buttons using Coordinate Mapping.")
-                return
-        
-        print("\n=== STARTING AUTO ATTACK ===")
-        print("IMPORTANT SAFETY INFORMATION:")
-        print("- Press Ctrl+Alt+S for emergency stop")
-        print("- Make sure COC is visible and at home base")
-        print("- Supervise the bot operation")
-        print("- Use at your own risk")
-        
-        confirm = input("\nStart auto attack? (y/n): ").strip().lower()
+        confirm = input("Confirm and start auto attack? (y/n): ").strip().lower()
         if confirm == 'y':
-            sessions = self.bot.auto_attacker.config['attack_sessions']
-            min_gold = self.bot.auto_attacker.config['min_gold']
-            min_elixir = self.bot.auto_attacker.config['min_elixir']
-            min_dark_elixir = self.bot.auto_attacker.config['min_dark_elixir']
-            
-            self.bot.start_auto_attack(sessions, min_gold, min_elixir, min_dark_elixir)
-            print("Auto attack started successfully!")
-            print("Army checking DISABLED - attacking immediately!")
-            print("Loot checking ENABLED - will skip low loot bases!")
-            print("Press Ctrl+Alt+S to stop at any time")
-    
+            # Pass the configured sessions to the bot
+            self.bot.start_auto_attack(attack_sessions)
+            print("\n✅ Auto attack started successfully!")
+            print("Press Ctrl+Alt+S to stop at any time.")
+        else:
+            print("Auto attack cancelled.")
+
     def stop_auto_attack(self) -> None:
         """Stop the auto attack system"""
         if not self.bot.is_auto_attacking():

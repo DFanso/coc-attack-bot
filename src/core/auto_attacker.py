@@ -13,17 +13,21 @@ import keyboard
 from .attack_player import AttackPlayer
 from .screen_capture import ScreenCapture
 from .coordinate_mapper import CoordinateMapper
+from .ai_analyzer import AIAnalyzer
 from ..utils.logger import Logger
+from ..utils.config import Config
 
 class AutoAttacker:
     """Automated continuous attack system"""
     
     def __init__(self, attack_player: AttackPlayer, screen_capture: ScreenCapture, 
-                 coordinate_mapper: CoordinateMapper, logger: Logger):
+                 coordinate_mapper: CoordinateMapper, logger: Logger, ai_analyzer: AIAnalyzer, config: Config):
         self.attack_player = attack_player
         self.screen_capture = screen_capture
-        self.coordinate_mapper = CoordinateMapper()
+        self.coordinate_mapper = coordinate_mapper
         self.logger = logger
+        self.ai_analyzer = ai_analyzer
+        self.config = config
         
         self.is_running = False
         self.auto_thread = None
@@ -35,15 +39,8 @@ class AutoAttacker:
             'last_attack_time': None
         }
         
-        # Configuration
-        self.config = {
-            'attack_sessions': [],  # List of attack sessions to rotate
-            'max_search_attempts': 10,
-            'min_gold': 100000,  # Minimum gold required
-            'min_elixir': 100000,  # Minimum elixir required
-            'min_dark_elixir': 1000,  # Minimum dark elixir required
-        }
-        
+        self.attack_sessions = self.config.get('auto_attacker.attack_sessions', [])
+        self.max_search_attempts = self.config.get('auto_attacker.max_search_attempts', 10)
         self.current_session_index = 0
         
         print("Auto Attacker initialized")
@@ -51,16 +48,22 @@ class AutoAttacker:
     
     def add_attack_session(self, session_name: str) -> bool:
         """Add an attack session to rotation"""
-        if session_name not in self.config['attack_sessions']:
-            self.config['attack_sessions'].append(session_name)
+        sessions = self.config.get('auto_attacker.attack_sessions', [])
+        if session_name not in sessions:
+            sessions.append(session_name)
+            self.config.set('auto_attacker.attack_sessions', sessions)
+            self.attack_sessions = sessions
             self.logger.info(f"Added attack session: {session_name}")
             return True
         return False
     
     def remove_attack_session(self, session_name: str) -> bool:
         """Remove an attack session from rotation"""
-        if session_name in self.config['attack_sessions']:
-            self.config['attack_sessions'].remove(session_name)
+        sessions = self.config.get('auto_attacker.attack_sessions', [])
+        if session_name in sessions:
+            sessions.remove(session_name)
+            self.config.set('auto_attacker.attack_sessions', sessions)
+            self.attack_sessions = sessions
             self.logger.info(f"Removed attack session: {session_name}")
             return True
         return False
@@ -71,7 +74,7 @@ class AutoAttacker:
             print("Auto attacker already running")
             return
         
-        if not self.config['attack_sessions']:
+        if not self.attack_sessions:
             self.logger.error("No attack sessions configured. Please add at least one session.")
             return
         
@@ -195,7 +198,7 @@ class AutoAttacker:
             return False
         
         search_attempts = 0
-        max_attempts = self.config['max_search_attempts']
+        max_attempts = self.max_search_attempts
         
         while search_attempts < max_attempts and self.is_running:
             search_attempts += 1
@@ -210,33 +213,63 @@ class AutoAttacker:
             time.sleep(5)
             
             # Step 4: Check loot
-            self.logger.info("4️⃣ Checking enemy loot...")
             screenshot_path = self.screen_capture.capture_game_screen()
-            if screenshot_path:
-                self.logger.info(f"Screenshot taken: {screenshot_path}")
-            
-            if self._check_loot():
-                self.logger.info("✅ Good loot found - proceeding with attack!")
+            if not screenshot_path:
+                self.logger.warning("Could not take screenshot, skipping base...")
+                continue # Try again
+
+            use_ai = self.config.get('ai_analyzer.enabled', False)
+            self.logger.info(f"AI Analysis is {'ENABLED' if use_ai else 'DISABLED'}.")
+
+            decision_to_attack = False
+            if use_ai:
+                self.logger.info("4️⃣ Checking enemy loot with AI...")
+                decision_to_attack = self._check_loot_with_ai(screenshot_path)
+            else:
+                self.logger.info("4️⃣ Performing simple loot check (AI Disabled)...")
+                decision_to_attack = self._check_loot()
+
+            if decision_to_attack:
+                self.logger.info("✅ Base is good! Proceeding with attack!")
                 return True
             else:
-                # Step 5: Bad loot - click next
-                next_coord = coords['next_button']
-                self.logger.info(f"5️⃣ Bad loot - clicking next at ({next_coord['x']}, {next_coord['y']})")
-                pyautogui.click(next_coord['x'], next_coord['y'])
-                time.sleep(3)  # Wait before next search
+                # Step 5: Bad loot or AI said SKIP, click next
+                self.logger.info("❌ Base not suitable. Clicking next...")
+                if 'next_button' in coords:
+                    next_coord = coords['next_button']
+                    pyautogui.click(next_coord['x'], next_coord['y'])
+                    time.sleep(3)  # Wait before next search
+                else:
+                    self.logger.error("next_button not mapped, cannot skip.")
+                    return False
         
         self.logger.warning(f"Could not find good loot after {max_attempts} attempts")
         return False
-    
+        
+    def _check_loot_with_ai(self, screenshot_path: str) -> bool:
+        """Analyze the base with Gemini and decide whether to attack."""
+        min_gold = self.config.get('ai_analyzer.min_gold', 300000)
+        min_elixir = self.config.get('ai_analyzer.min_elixir', 300000)
+        min_dark = self.config.get('ai_analyzer.min_dark_elixir', 5000)
+
+        analysis = self.ai_analyzer.analyze_base(screenshot_path, min_gold, min_elixir, min_dark)
+
+        if analysis.get("error"):
+            self.logger.error(f"AI analysis failed: {analysis['reasoning']}")
+            return False
+
+        recommendation = analysis.get("recommendation", "SKIP").upper()
+        return recommendation == "ATTACK"
+
     def _check_loot(self) -> bool:
         """Check if enemy base has good loot"""
         coords = self.coordinate_mapper.get_coordinates()
         
         # Check each loot type
         loot_checks = {
-            'gold': ('enemy_gold', self.config['min_gold']),
-            'elixir': ('enemy_elixir', self.config['min_elixir']),
-            'dark': ('enemy_dark_elixir', self.config['min_dark_elixir'])
+            'gold': ('enemy_gold', self.config.get('ai_analyzer.min_gold', 300000)),
+            'elixir': ('enemy_elixir', self.config.get('ai_analyzer.min_elixir', 300000)),
+            'dark': ('enemy_dark_elixir', self.config.get('ai_analyzer.min_dark_elixir', 5000))
         }
         
         good_loot_count = 0
@@ -285,11 +318,11 @@ class AutoAttacker:
     
     def _get_next_attack_session(self) -> str:
         """Get the next attack session from rotation"""
-        if not self.config['attack_sessions']:
+        if not self.attack_sessions:
             return ""
         
-        session = self.config['attack_sessions'][self.current_session_index]
-        self.current_session_index = (self.current_session_index + 1) % len(self.config['attack_sessions'])
+        session = self.attack_sessions[self.current_session_index]
+        self.current_session_index = (self.current_session_index + 1) % len(self.attack_sessions)
         return session
     
     def get_stats(self) -> Dict:
@@ -309,19 +342,19 @@ class AutoAttacker:
             'runtime_hours': runtime_hours,
             'attacks_per_hour': self.stats['total_attacks'] / max(runtime_hours, 1),
             'last_attack': self.stats['last_attack_time'].strftime("%H:%M:%S") if self.stats['last_attack_time'] else "None",
-            'configured_sessions': self.config['attack_sessions'].copy()
+            'configured_sessions': self.attack_sessions.copy()
         }
     
     def update_loot_requirements(self, min_gold: int = None, min_elixir: int = None, min_dark_elixir: int = None):
         """Update minimum loot requirements"""
         if min_gold is not None:
-            self.config['min_gold'] = min_gold
+            self.config.set('ai_analyzer.min_gold', min_gold)
         if min_elixir is not None:
-            self.config['min_elixir'] = min_elixir
+            self.config.set('ai_analyzer.min_elixir', min_elixir)
         if min_dark_elixir is not None:
-            self.config['min_dark_elixir'] = min_dark_elixir
+            self.config.set('ai_analyzer.min_dark_elixir', min_dark_elixir)
         
-        self.logger.info(f"Updated loot requirements: Gold={self.config['min_gold']}, Elixir={self.config['min_elixir']}, Dark={self.config['min_dark_elixir']}")
+        self.logger.info(f"Updated loot requirements: Gold={self.config.get('ai_analyzer.min_gold')}, Elixir={self.config.get('ai_analyzer.min_elixir')}, Dark={self.config.get('ai_analyzer.min_dark_elixir')}")
     
     def configure_buttons(self) -> Dict[str, str]:
         """Get list of required button mappings for the simplified automation"""

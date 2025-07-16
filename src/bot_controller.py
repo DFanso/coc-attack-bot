@@ -10,6 +10,7 @@ from .core.coordinate_mapper import CoordinateMapper
 from .core.attack_recorder import AttackRecorder
 from .core.attack_player import AttackPlayer
 from .core.auto_attacker import AutoAttacker
+from .core.ai_analyzer import AIAnalyzer
 from .utils.config import Config
 from .utils.logger import Logger
 
@@ -23,11 +24,17 @@ class BotController:
         self.coordinate_mapper = CoordinateMapper()
         self.attack_recorder = AttackRecorder()
         self.attack_player = AttackPlayer()
+        self.ai_analyzer = AIAnalyzer(
+            api_key=self.config.get("ai_analyzer.google_gemini_api_key", ""),
+            logger=self.logger
+        )
         self.auto_attacker = AutoAttacker(
-            self.attack_player, 
-            self.screen_capture, 
-            self.coordinate_mapper, 
-            self.logger
+            attack_player=self.attack_player, 
+            screen_capture=self.screen_capture, 
+            coordinate_mapper=self.coordinate_mapper, 
+            logger=self.logger,
+            ai_analyzer=self.ai_analyzer,
+            config=self.config  # Pass the single config instance
         )
         
         self.is_recording = False
@@ -76,13 +83,6 @@ class BotController:
     def start_auto_attack(self, attack_sessions: List[str], min_gold: int = 100000, min_elixir: int = 100000, 
                           min_dark_elixir: int = 1000) -> None:
         """Start automated continuous attacks"""
-        # Configure auto attacker
-        for session in attack_sessions:
-            self.auto_attacker.add_attack_session(session)
-        
-        # Update loot requirements for the simplified auto attacker
-        self.auto_attacker.update_loot_requirements(min_gold, min_elixir, min_dark_elixir)
-        
         # Start automation
         self.auto_attacker.start_auto_attack()
     
@@ -93,7 +93,11 @@ class BotController:
     def get_auto_attack_stats(self) -> Dict:
         """Get auto attack statistics"""
         return self.auto_attacker.get_stats()
-    
+        
+    def test_ai_connection(self) -> bool:
+        """Test the connection to the Gemini API."""
+        return self.ai_analyzer.test_connection()
+
     def is_auto_attacking(self) -> bool:
         """Check if auto attack is running"""
         return self.auto_attacker.is_running

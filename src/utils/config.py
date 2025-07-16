@@ -77,6 +77,13 @@ class Config:
                 "detection_timeout": 10,
                 "click_precision": 5,  # pixels
                 "template_matching_threshold": 0.8
+            },
+            "ai_analyzer": {
+                "google_gemini_api_key": "AIzaSyBxioedAJx8LTvbPCBTITmtJ-3vBGiyCsU",
+                "enabled": False,
+                "min_gold": 300000,
+                "min_elixir": 300000,
+                "min_dark_elixir": 2000
             }
         }
     
