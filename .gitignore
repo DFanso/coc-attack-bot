@@ -50,3 +50,4 @@ config.json
 *.tmp
 *.log
 *.bak 
+src/utils/config.py
