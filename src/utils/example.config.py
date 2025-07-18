@@ -79,7 +79,7 @@ class Config:
                 "template_matching_threshold": 0.8
             },
             "ai_analyzer": {
-                "google_gemini_api_key": "AIzaSyC5tOcA2F_HA20BvrDMLlS7UDyFuT",
+                "google_gemini_api_key": "AIzaSyC5tOcA2HA20BvrDMLlS7UDyFuT",
                 "enabled": False,
                 "min_gold": 300000,
                 "min_elixir": 300000,
