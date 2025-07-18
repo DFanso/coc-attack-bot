@@ -30,7 +30,7 @@ This bot is for educational purposes only. Use at your own risk. The author is n
 
 1. **Clone the repository:**
    ```bash
-   git clone <repository-url>
+   git clone <https://github.com/DFanso/coc-attack-bot>
    cd coc-attack-bot
    ```
 
@@ -93,6 +93,8 @@ This bot is for educational purposes only. Use at your own risk. The author is n
 **Essential coordinates to map:**
 - `attack_button` - The attack button to start base search
 - `next_button` - Skip to next base during search
+- `find_a_match` - find a match button
+
 - `barbarian` - Barbarian troop selection
 - `archer` - Archer troop selection
 - `spell1` - First spell slot
