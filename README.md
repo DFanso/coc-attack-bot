@@ -83,9 +83,6 @@ This bot is for educational purposes only. Use at your own risk. The author is n
 3. Move your mouse to important game elements and press **F2** to record each position:
    - **Attack button** (to start searching for bases)
    - **Next button** (to skip bases during search)
-   - **Army camps** (to check if army is ready)
-   - **Troop selection buttons** (barbarians, archers, spells, etc.)
-   - **Deploy positions** (where to place troops on the base)
    - **Return home button** (after attack completion)
 4. Enter descriptive names for each coordinate (e.g., "attack_button", "barbarian", "archer")
 5. Press **F3** to save all coordinates when finished
@@ -94,10 +91,6 @@ This bot is for educational purposes only. Use at your own risk. The author is n
 - `attack_button` - The attack button to start base search
 - `next_button` - Skip to next base during search
 - `find_a_match` - find a match button
-
-- `barbarian` - Barbarian troop selection
-- `archer` - Archer troop selection
-- `spell1` - First spell slot
 - `return_home` - Return home after attack
 
 ### 3. Record Attack Strategies
